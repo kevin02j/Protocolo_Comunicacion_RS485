@@ -1,103 +1,86 @@
 #include <SoftwareSerial.h>
+#include <Servo.h>
+#include <NewPing.h>
 
-// Trama maestro-esclavo
-#define HEAD 0xAA
+#define TRIG_PIN A5
+#define ECHO_PIN A4
+#define Distancia_Maxima 200
+NewPing sensor(TRIG_PIN, ECHO_PIN, Distancia_Maxima);
+
+#define RS485_BAUD 9600    // Velocidad de comunicación RS-485
+#define RS485_PIN_MODE 13  // HIGH: Tx; LOW: Rx
 #define MY_SLAVE_ID 0x23
-#define TAIL 0xFE
+#define SERVO_PIN 2
 
-//Comandos soportados
-#define CMD_LED_ON      0x01
-#define CMD_LED_OFF     0x02
-#define CMD_READ_POT    0x03
-
-#define LED_BUILTIN     13
-
-// Formato de Trama: <HEAD> <SLAVE_ID> <CMD> <TAIL>
-
-#define RS485_PIN_MODE 9         // HIGH -> Transmision; LOW-> recepcion
-
-SoftwareSerial RS485Serial(10, 8);    // RX, TX
-
-byte buff[5], idx;
-float potenciometro;
-
-void enviarRespuesta( float x ){
-  buff[0] = HEAD;
-  buff[1] = MY_SLAVE_ID;
-  buff[2] = (byte)x;
-  buff[3] = TAIL;
-  digitalWrite( RS485_PIN_MODE, HIGH ); // poner en modo Tx
-  RS485Serial.write( buff, 4 );               // transmitir mensaje
-  RS485Serial.flush();
-  digitalWrite( RS485_PIN_MODE, LOW);   // poner en modo Rx
-  
-}
-
-void ejecutarComando(){
-  Serial.println("Ejectutando comando!!!");
-  if ( buff[1] != MY_SLAVE_ID ) // el mensaje es para otro esclavo
-    return;
-
-  switch( buff[2] ){                      // ejecutar comando
-
-    case CMD_LED_ON:                      // Encender Led
-      digitalWrite( LED_BUILTIN, HIGH );  
-      break;
-
-    case CMD_LED_OFF:                     // Apagar Led
-      digitalWrite( LED_BUILTIN, LOW );
-      break;
-    
-    case CMD_READ_POT:
-      potenciometro = analogRead(0);
-      enviarRespuesta( potenciometro );
-      break;
-
-    default:                              // Comando Inva'lido
-      break;
-  }
-}
-
+SoftwareSerial RS485Serial(12, 11);  // RX, TX
+Servo myservo;
 
 void setup() {
-  // Configurar Serial a 19200 baudios (para el monitor serie)
-  Serial.begin(19200);
-
-  // Configurar para utilizar el bus 485 a 9600
-  RS485Serial.begin(9600);
-
-  // configrar pines
-  pinMode( LED_BUILTIN, OUTPUT );
-  pinMode( RS485_PIN_MODE, OUTPUT );
-  digitalWrite( LED_BUILTIN, LOW );   // apagar led
-  digitalWrite( RS485_PIN_MODE, LOW );// poner en modo de recepcion
-  idx = 0;
+  Serial.begin(9600);
+  pinMode(RS485_PIN_MODE, OUTPUT);
+  RS485Serial.begin(RS485_BAUD);
+  digitalWrite(RS485_PIN_MODE, LOW);  // Rx
+  myservo.attach(SERVO_PIN);
 }
 
-
 void loop() {
+  if (RS485Serial.available()) {
+    String receivedFrame = RS485Serial.readStringUntil('\n');
 
-  if( !RS485Serial.available() )
-    return;
+    if (receivedFrame.startsWith("AA")) {
+      //<HEAD><ID><CMD><DATE>
+      String ID_Slave = receivedFrame.substring(2, 4);
+      int idHex = strtol(ID_Slave.c_str(), NULL, 16);
 
-  byte incoming = RS485Serial.read();
-  Serial.print("Recibido: ");
-  Serial.println(incoming);
-    
-  if( idx == 0 ){           // principio de trama
-    if( incoming != HEAD ) // trama incorrecta
-      return;
-
-    buff[idx] = incoming;
-    idx++;
-  }
-  else if ( idx > 0 && idx < 4 ){ // 
-    buff[idx++] = incoming;      //
-     
-    if ( idx == 4 ){                // fin de trama
-      if( buff[3] == TAIL )         // verificar que termine bien
-        ejecutarComando();
-      idx = 0;
+      if (idHex == MY_SLAVE_ID) {
+        String cmd = receivedFrame.substring(4, 6);
+        int cmdInt = cmd.toInt(); 
+        int inf = receivedFrame.substring(6).toInt();
+        int rtta = ejecutarAccion(cmdInt, inf);
+        enviarRtta(rtta);
+      } else {
+        Serial.println("Error");
+      }
+    } else {
+      Serial.println("Error");
     }
+  }
+}
+
+int ejecutarAccion(int cmd, int inf) {
+  switch (cmd) {
+    case 1:
+      if (inf >= 90 && inf <= 180) {
+        myservo.write(inf);
+        return 1;
+      } else {
+        return 0;
+      }
+      break;
+    case 2:
+      int distancia=lecturaSensor();
+      return distancia;
+      break;
+    default:
+      break;
+  }
+}
+
+void enviarRtta(int state) {
+  String frame = "AA" + String(state) + "\n";
+  Serial.println(frame);
+  digitalWrite(RS485_PIN_MODE, HIGH);  // modo tx
+  RS485Serial.print(frame);
+  RS485Serial.flush();
+  digitalWrite(RS485_PIN_MODE, LOW);  // modo rx
+}
+
+int lecturaSensor() {
+  int cm = sensor.ping_cm();  // Medir la distancia en centímetros
+  if (cm == 0) {
+    //Serial.println("¡No se detectó ningún objeto!");
+    return 250;
+  } else {
+    return cm;
   }
 }
