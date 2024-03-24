@@ -7,6 +7,15 @@
 
 SoftwareSerial RS485Serial(3, 4);  // RX, TX
 
+//Variables para almacenar la rtta del esclavo
+String ByteState;
+String binaryByteState;
+String Information;
+String binaryInfo;
+String CompleteBinary;
+String CRC_Calculate;
+String CRC_Received;
+
 void setup() {
   Serial.begin(9600);
   pinMode(RS485_PIN_MODE, OUTPUT);
@@ -18,164 +27,140 @@ void loop() {
     String frame = Serial.readStringUntil('\n');
 
     if (frame.startsWith("AA")) {
-      String dataHex = frame.substring(2, 6);  //<ID><CMD>
-      String dataInt = frame.substring(6);     //<DATE>
-      long aux = strtol(dataHex.c_str(), NULL, 16);
-      String BinaryDateHex = String(aux, BIN);
-      long aux2 = strtol(dataInt.c_str(), NULL, 10);
-      String BinaryDateInt = String(aux2, BIN);
-
-      String dataFrameBinary;
-      if (BinaryDateInt.length() == 1) {
-        // CMD sin datos
-        dataFrameBinary = BinaryDateHex;
-      } else {
-        // CMD con datos
-        dataFrameBinary = BinaryDateHex + BinaryDateInt;
-      }
-      // Serial.println(dataFrameBinary);
+      String dataFrameBinary = getDataFrameBinary(frame);
       String CRC_Frame_Send = OrderCRC(dataFrameBinary);
       String frameComplete = frame + CRC_Frame_Send;
-      Serial.println("Trama con CRC: " + String(frameComplete));
-      enviarComando(frameComplete);
+      Serial.println("Frame to send : " + String(frameComplete));
+      send_Frame(frameComplete);
       delay(1000);
-
-      int rttaSlave = respuestaSlave();
-      switch (rttaSlave) {
-        case 3:
-          Serial.println("No se recibio respuesta");
-          break;
-        case 2:
-          Serial.println("Formato incorrecto");
-          break;
-        case 1:
-          Serial.println("Successful Action");
-          break;
-        case 0:
-          Serial.println("Error Action");
-          break;
-        default:
-          Serial.print("Distancia: ");
-          Serial.print(rttaSlave);
-          Serial.println(" CM");
-          break;
-      }
+      respuestaSlave();
     } else {
-      Serial.println("Formato incorrecto");
+      Serial.println("The frame does not have the predefined header. Error!");
     }
   }
 }
 
-void enviarComando(String frame) {
-  digitalWrite(RS485_PIN_MODE, HIGH);  // modo tx
-  RS485Serial.println(frame);
-  // Serial.println(frame);
+void send_Frame(String frameComplete) {
+  digitalWrite(RS485_PIN_MODE, HIGH);  // Modo Tx
+  RS485Serial.println(frameComplete);
   RS485Serial.flush();
-  digitalWrite(RS485_PIN_MODE, LOW);  // modo rx
+  digitalWrite(RS485_PIN_MODE, LOW);  // Modo Rx
 }
 
-int respuestaSlave() {
+void respuestaSlave() {
   if (RS485Serial.available()) {
     String frameSlave = RS485Serial.readStringUntil('\n');
     if (frameSlave.startsWith("AA")) {
-      // Serial.println(frameSlave);
-      String AB = frameSlave.substring(2);
-      uint8_t sizeS = AB.length();
+      String usefulFrame = frameSlave.substring(2);
+      uint8_t sizeS = usefulFrame.length();
       switch (sizeS) {
         case 6:
           {
-            String State6 = frameSlave.substring(2, 3);
-            String StateCRC6 = frameSlave.substring(3, 4);
-            int A6 = State6.toInt();
-            int B6 = StateCRC6.toInt();
-
-            String CompleteBinary6 = convertInt_toBinary(State6, StateCRC6);
-
-            String CRC_6_Calculate = OrderCRC(CompleteBinary6);
-            String CRC_6_Received = frameSlave.substring(4);
-
-            Serial.println("CRC recibido: " + CRC_6_Received);
-            Serial.println("CRC calculado: " + CRC_6_Calculate);
-
-            if (CRC_6_Calculate = CRC_6_Received) {
-              Serial.println("CRC Slave CORRECT");
+            String ByteState = usefulFrame.substring(0, 2);
+            binaryByteState = hexToBinary(ByteState);
+            CRC_Calculate = OrderCRC(binaryByteState);
+            CRC_Received = usefulFrame.substring(2);
+            Serial.println();
+            Serial.println("CRC Received: " + CRC_Received);
+            Serial.println("CRC Calculate: " + CRC_Calculate);
+            if (CRC_Calculate = CRC_Received) {
+              evaluateBits(binaryByteState);
             } else {
-              Serial.println("CRC Slave INCORRECT");
+              Serial.println("Data transmission error (slave-master)");
             }
-            if (B6 == 2) {
-              Serial.println("Information not error");
-            } else {
-              Serial.println("Information error");
-            }
-            return A6;
           }
           break;
         case 7:
           {
-            String State7 = frameSlave.substring(2, 4);
-            String StateCRC7 = frameSlave.substring(4, 5);
-            int A7 = State7.toInt();
-            int B7 = StateCRC7.toInt();
-
-            String CompleteBinary7 = convertInt_toBinary(State7, StateCRC7);
-
-            String CRC_7_Calculate = OrderCRC(CompleteBinary7);
-            String CRC_7_Received = frameSlave.substring(5);
-
-            Serial.println("CRC recibido: " + CRC_7_Received);
-            Serial.println("CRC calculado: " + CRC_7_Calculate);
-
-            if (CRC_7_Calculate = CRC_7_Received) {
-              Serial.println("CRC Slave CORRECT");
+            String ByteState = usefulFrame.substring(0, 2);
+            binaryByteState = hexToBinary(ByteState);
+            Information = usefulFrame.substring(2, 3);
+            binaryInfo = IntToBinary(Information);
+            CompleteBinary = binaryByteState + binaryInfo;
+            CRC_Calculate = OrderCRC(CompleteBinary);
+            CRC_Received = usefulFrame.substring(3);
+            Serial.println();
+            Serial.println("CRC Received: " + CRC_Received);
+            Serial.println("CRC Calculate: " + CRC_Calculate);
+            if (CRC_Calculate = CRC_Received) {
+              evaluateBits(binaryByteState);
+              showInfo(Information);
             } else {
-              Serial.println("CRC Slave INCORRECT");
+              Serial.println("Data transmission error (slave-master)");
             }
-            if (B7 == 2) {
-              Serial.println("Information not error");
-            } else {
-              Serial.println("Information error");
-            }
-            return A7;
           }
           break;
         case 8:
           {
-            String State8 = frameSlave.substring(2, 5);
-            String StateCRC8 = frameSlave.substring(5, 6);
-            int A8 = State8.toInt();
-            int B8 = StateCRC8.toInt();
-
-            String CompleteBinary8 = convertInt_toBinary(State8, StateCRC8);
-            Serial.println(CompleteBinary8);
-            String CRC_8_Calculate = OrderCRC(CompleteBinary8);
-            String CRC_8_Received = frameSlave.substring(6);
-
-            Serial.println("CRC recibido: " + CRC_8_Received);
-            Serial.println("CRC calculado: " + CRC_8_Calculate);
-
-            if (CRC_8_Calculate = CRC_8_Received) {
-              Serial.println("CRC Slave CORRECT");
+            String ByteState = usefulFrame.substring(0, 2);
+            binaryByteState = hexToBinary(ByteState);
+            Information = usefulFrame.substring(2, 4);
+            binaryInfo = IntToBinary(Information);
+            CompleteBinary = binaryByteState + binaryInfo;
+            CRC_Calculate = OrderCRC(CompleteBinary);
+            CRC_Received = usefulFrame.substring(4);
+            Serial.println();
+            Serial.println("CRC Received: " + CRC_Received);
+            Serial.println("CRC Calculate: " + CRC_Calculate);
+            if (CRC_Calculate = CRC_Received) {
+              evaluateBits(binaryByteState);
+              showInfo(Information);
             } else {
-              Serial.println("CRC Slave INCORRECT");
+              Serial.println("Data transmission error (slave-master)");
             }
-            if (B8 == 2) {
-              Serial.println("Information not error");
+          }
+          break;
+        case 9: 
+          {
+            String ByteState = usefulFrame.substring(0, 2);
+            binaryByteState = hexToBinary(ByteState);
+            Information = usefulFrame.substring(2, 5);
+            binaryInfo = IntToBinary(Information);
+            CompleteBinary = binaryByteState + binaryInfo;
+            CRC_Calculate = OrderCRC(CompleteBinary);
+            CRC_Received = usefulFrame.substring(5);
+            Serial.println();
+            Serial.println("CRC Received: " + CRC_Received);
+            Serial.println("CRC Calculate: " + CRC_Calculate);
+            if (CRC_Calculate = CRC_Received) {
+              evaluateBits(binaryByteState);
+              showInfo(Information);
             } else {
-              Serial.println("Information error");
+              Serial.println("Data transmission error (slave-master)");
             }
-            return A8;
+          }
+          break;
+        case 10: 
+          {
+            String ByteState = usefulFrame.substring(0, 2);
+            binaryByteState = hexToBinary(ByteState);
+            Information = usefulFrame.substring(2, 6);
+            binaryInfo = IntToBinary(Information);
+            CompleteBinary = binaryByteState + binaryInfo;
+            CRC_Calculate = OrderCRC(CompleteBinary);
+            CRC_Received = usefulFrame.substring(6);
+            Serial.println();
+            Serial.println("CRC Received: " + CRC_Received);
+            Serial.println("CRC Calculate: " + CRC_Calculate);
+            if (CRC_Calculate = CRC_Received) {
+              evaluateBits(binaryByteState);
+              showInfo(Information);
+            } else {
+              Serial.println("Data transmission error (slave-master)");
+            }
           }
           break;
         default:
           {
-            break;
+            Serial.print("The frame size is out of range. Error!!");
           }
+          break;
       }
     } else {
-      return 2;  // Formato incorrecto
+      Serial.println("The frame does not have the predefined header. Error!");
     }
   } else {
-    return 3;  // No se recibió respuesta
+    Serial.println("No response received");
   }
 }
 
@@ -205,6 +190,38 @@ String OrderCRC(String bin) {
   return CRCHex;
 }
 
+String getDataFrameBinary(String frame) {
+  String dataHex = frame.substring(2, 6);  //<ID><CMD>
+  String dataInt = frame.substring(6);     //<DATE>
+  String BinaryDateHex = String(strtoul(dataHex.c_str(), NULL, 16), BIN);
+  String BinaryDateInt = String(strtoul(dataInt.c_str(), NULL, 10), BIN);
+  String dataFrameBinary = (BinaryDateInt.length() == 1) ? BinaryDateHex : (BinaryDateHex + BinaryDateInt);
+  return dataFrameBinary;
+}
+
+void showInfo(String info) {
+  Serial.println();
+  Serial.println("Information received from slave: " + info);
+}
+
+void evaluateBits(String byteEstado) {
+  Serial.println();
+  Serial.println("Status byte result");
+  String acciones[] = {"MoveDone", "ChecksumError", "OverCurrent", "PowerOn", "PositionError", "ValorLimit1", "ValorLimit2", "HomeInProgress"};
+  int longitud = byteEstado.length();
+  for (int i = 0; i < longitud; i++) {
+    char bit = byteEstado.charAt(i);
+    int valorBit = bit - '0'; // Restar '0' convierte el caracter '1' o '0' a su valor numérico
+    if (valorBit == 1) {
+      Serial.println("Bit " + String(i) + " is 1: " + acciones[i]);
+    } else if (valorBit == 0) {
+      Serial.println("Bit " + String(i) + " is 0");
+    } else {
+      Serial.println("Bit " + String(i) + " no es válido");
+    }
+  }
+}
+
 String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   long aux = strtol(dataInt_1.c_str(), NULL, 10);
   String BinaryDateHex = String(aux, BIN);
@@ -221,4 +238,34 @@ String convertHex_int_toBinary(String dataHex, String dataInt) {
   String BinaryDateInt = String(aux2, BIN);
   String BinaryComplete = BinaryDateHex + BinaryDateInt;
   return BinaryComplete;
+}
+
+String hexToBinary(String hexString) {
+  String binaryString = "";
+  for (int i = 0; i < hexString.length(); i++) {
+    char hexChar = hexString.charAt(i);
+    int nibbleValue;
+    if (hexChar >= '0' && hexChar <= '9') {
+      nibbleValue = hexChar - '0'; // Convierte dígito decimal a entero
+    } else if (hexChar >= 'A' && hexChar <= 'F') {
+      nibbleValue = hexChar - 'A' + 10; // Convierte letra A-F a entero (10-15)
+    } else if (hexChar >= 'a' && hexChar <= 'f') {
+      nibbleValue = hexChar - 'a' + 10; // Convierte letra a-f a entero (10-15)
+    } 
+    for (int j = 3; j >= 0; j--) {
+      if (nibbleValue & (1 << j)) {
+        binaryString += "1";
+      } else {
+        binaryString += "0";
+      }
+    }
+  }
+  return binaryString;
+}
+
+
+String IntToBinary(String intString) {
+  long aux = strtol(intString.c_str(), NULL, 10);
+  String BinaryDateInt = String(aux, BIN);
+  return BinaryDateInt;
 }

@@ -19,16 +19,39 @@ NewPing sensor(TRIG_PIN, ECHO_PIN, Distancia_Maxima);
 #define PIN_OUT3 9
 #define PIN_OUT4 10
 
+#define PIN_TENSION A0
+const float minTension = 1.5;
+const float maxTension = 5.0;
 
 #define RS485_BAUD 9600    // Velocidad de comunicación RS-485
 #define RS485_PIN_MODE 13  // HIGH: Tx; LOW: Rx
 #define MY_SLAVE_ID 0
 #define SERVO_PIN 2
 
+
 SoftwareSerial RS485Serial(12, 11);  // RX, TX
 Servo myservo;
 
+//Variables del byte de estado
+int MoveDone;
+int ChecksumError;
+int OverCurrent;
+int powerOn;
+int positionError;
+int valorLimit1;
+int valorLimit2;
+int homeInProgress;
+int Info_to_Send;
+String ByteState;
+
+//Variables para comprobar el CRC
+String dateHex;
+String dateInt;
+String dateBinary;
+String CRC_Received;
+String CRC_Calculate;
 String info;
+
 int lastSensorValue = 0;
 
 void setup() {
@@ -43,41 +66,52 @@ void setup() {
 
 void loop() {
   if (RS485Serial.available()) {
+    MoveDone = 0;
+    ChecksumError = 0;
+    OverCurrent = 0;
+    powerOn = 0;
+    positionError = 0;
+    valorLimit1 = 0;
+    valorLimit2 = 0;
+    homeInProgress = 0;
+    Info_to_Send = 0;
+
     String receivedFrame = RS485Serial.readStringUntil('\n');
-
+    
     if (receivedFrame.startsWith("AA")) {
-      //<HEAD><ID><CMD><DATE>
-      int IdEEprom = EEPROM.read(MY_SLAVE_ID);
       String ID_Slave = receivedFrame.substring(2, 4);
+      int IdEEprom = EEPROM.read(MY_SLAVE_ID);
       int idInt = ID_Slave.toInt();
-
       if (idInt == IdEEprom) {
-        String data = receivedFrame.substring(2);
-        int stateCRC = checksum(data);
-        if (stateCRC == 2) {
-          //Sin errorres en la comunicacion
+        String dataUseful = receivedFrame.substring(2);
+        checksum(dataUseful);
+        //Comprobar si hubo errores en la transmision
+        if (ChecksumError == 0) {
           String cmd = receivedFrame.substring(4, 6);
-          String rtta = ejecutarAccion(cmd);
-
-          String CRCss = String(stateCRC);
-          String rttaCompleteBinary = convertInt_toBinary(rtta, CRCss);
+          ejecutarAccion(cmd);
+        }
+        verificarTension();
+        ByteState = String(MoveDone) + String(ChecksumError) + String(OverCurrent) + String(powerOn) + String(positionError) + String(valorLimit1) + String(valorLimit2) + String(homeInProgress);
+        if (Info_to_Send == 0) {
+          String rttaCompleteBinary = ByteState;
           String CRC_Send_Calculate = OrderCRC(rttaCompleteBinary);
-          enviarRtta(rtta, 2, CRC_Send_Calculate);
+          enviarRtta(CRC_Send_Calculate);
         } else {
-          String crcprueba = "AAAA";
-          String Sc = "0";
-          enviarRtta(Sc, 3, crcprueba);
+          String Info_to_Send_Binary = String(Info_to_Send, BIN);
+          String rttaCompleteBinary = ByteState + Info_to_Send_Binary;
+          String CRC_Send_Calculate = OrderCRC(rttaCompleteBinary);
+          enviarRtta(CRC_Send_Calculate);
         }
       } else {
-        Serial.println("Error ID incorrecto");
+        Serial.println("Information is not for this slave");
       }
     } else {
-      Serial.println("Error");
+      Serial.println("The frame does not have the predefined header. Error!");
     }
   }
 }
 
-String ejecutarAccion(String cmd) {
+void ejecutarAccion(String cmd) {
   int cmdInt = cmd.toInt();
   int inf = info.toInt();
   switch (cmdInt) {
@@ -88,10 +122,10 @@ String ejecutarAccion(String cmd) {
         Serial.println(inf);
         if (inf >= 0 && inf <= 255) {
           EEPROM.write(0, inf);  // 0-255
-          return "1";
+          MoveDone = 1;
         } else {
           Serial.println("El nuevo ID no está en el rango válido (0-255)");
-          return "0";
+          MoveDone = 0;
         }
       }
       break;
@@ -99,9 +133,10 @@ String ejecutarAccion(String cmd) {
       {
         //Ultima lectura del sensor
         if (lastSensorValue == 0) {
-          return "0";
+          MoveDone = 0;
         } else {
-          return String(lastSensorValue);
+          MoveDone = 1;
+          Info_to_Send = lastSensorValue;
         }
       }
       break;
@@ -112,69 +147,66 @@ String ejecutarAccion(String cmd) {
           int distancia = lecturaSensor();
           lastSensorValue = distancia;
           delay(50);
-          return String(distancia);
+          Info_to_Send = distancia;
         }
       }
       break;
     case 4:
-     {
-      pinMode(PIN_IN1, INPUT);
-      pinMode(PIN_IN2, INPUT);
-      pinMode(PIN_IN3, INPUT);
-      pinMode(PIN_IN4, INPUT);
-      pinMode(PIN_OUT1, OUTPUT);
-      pinMode(PIN_OUT2, OUTPUT);
-      pinMode(PIN_OUT3, OUTPUT);
-      pinMode(PIN_OUT4, OUTPUT);
-     }
-     break;
+      {
+        pinMode(PIN_IN1, INPUT);
+        pinMode(PIN_IN2, INPUT);
+        pinMode(PIN_IN3, INPUT);
+        pinMode(PIN_IN4, INPUT);
+        pinMode(PIN_OUT1, OUTPUT);
+        pinMode(PIN_OUT2, OUTPUT);
+        pinMode(PIN_OUT3, OUTPUT);
+        pinMode(PIN_OUT4, OUTPUT);
+        MoveDone = 1;
+      }
+      break;
     case 5:
-     {
-      switch (inf) {
-        case 3:
-        {
-          int conteo = 0;
-          if (digitalRead(PIN_IN1) == HIGH){
-            conteo++;
-        return String(conteo);
-          }
-
-        }
-        break;
-        case 4:
-        {
-
-        }
-        break;
-        case 5:
-        {
-
-        }
-        break;
-        case 6:
-        {
-
-        }
-        break;
-        default:
-        {
-          break;
+      {
+        switch (inf) {
+          case 3:
+            {
+              if (digitalRead(PIN_IN1) == HIGH) {
+                Info_to_Send = 1;
+              }
+              else{
+                Info_to_Send = 2;
+              }
+            }
+            break;
+          case 4:
+            {
+            }
+            break;
+          case 5:
+            {
+            }
+            break;
+          case 6:
+            {
+            }
+            break;
+          default:
+            {
+              break;
+            }
         }
       }
-     }
-     break;
+      break;
     case 6:
-     {
-
-     }
-     break;
+      {
+      }
+      break;
     case 7:
       {
         if (inf >= 90 && inf <= 180) {
           myservo.write(inf);
-          return "1";
+          MoveDone = 1;
         } else {
-          return "0";
+          MoveDone = 0;
         }
       }
       break;
@@ -182,7 +214,8 @@ String ejecutarAccion(String cmd) {
       {
         int distancia = lecturaSensor();
         lastSensorValue = distancia;
-        return String(distancia);
+        MoveDone = 1;
+        Info_to_Send = distancia;
       }
       break;
     default:
@@ -190,95 +223,91 @@ String ejecutarAccion(String cmd) {
   }
 }
 
-int checksum(String checkFrame) {
+void checksum(String checkFrame) {
   uint8_t sizeF = checkFrame.length();
-  //Serial.println("lenght: " + String(sizeF));
   switch (sizeF) {
     case 9:
       {
-        String datoHex9 = checkFrame.substring(0, 4);
-        long aux9 = strtol(datoHex9.c_str(), NULL, 16);
-        String datoBinario9 = String(aux9, BIN);
-
-        String CRC_9_Received = checkFrame.substring(4);
-        String CRC_9_Calculate = OrderCRC(datoBinario9);
-
-        Serial.println("CRC recibido: " + CRC_9_Received);
-        Serial.println("CRC calculado: " + CRC_9_Calculate);
-        if (CRC_9_Calculate = CRC_9_Received) {
-          return 2;
+        dateHex = checkFrame.substring(0, 4);
+        dateBinary = hexToBinary(dateHex);
+        CRC_Received = checkFrame.substring(4);
+        CRC_Calculate = OrderCRC(dateBinary);
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
         } else {
-          return 3;
+          ChecksumError = 1;
         }
       }
       break;
     case 10:
       {
-        String datoH_10 = checkFrame.substring(0, 4);
-        String datoI_10 = checkFrame.substring(4, 5);
-
-        String dateBinary10 = convertHex_int_toBinary(datoH_10, datoI_10);
-
-        String CRC_10_Received = checkFrame.substring(5);
-        info = checkFrame.substring(4, 5);
-        String CRC_10__Calculate = OrderCRC(dateBinary10);
-
-        Serial.println("CRC recibido: " + CRC_10_Received);
-        Serial.println("CRC calculado: " + CRC_10__Calculate);
-        if (CRC_10__Calculate = CRC_10_Received) {
-          return 2;
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 5);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(5);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
         } else {
-          return 3;
+          ChecksumError = 1;
         }
       }
       break;
     case 11:
       {
-        String datoH_11 = checkFrame.substring(0, 4);
-        String datoI_11 = checkFrame.substring(4, 6);
-        String dateBinary11 = convertHex_int_toBinary(datoH_11, datoI_11);
-
-        String CRC_11_Received = checkFrame.substring(6);
-        info = checkFrame.substring(4, 6);
-        String CRC_11__Calculate = OrderCRC(dateBinary11);
-
-        Serial.println("CRC recibido: " + CRC_11_Received);
-        Serial.println("CRC calculado: " + CRC_11__Calculate);
-        if (CRC_11__Calculate = CRC_11_Received) {
-          return 2;
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 6);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(6);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
         } else {
-          return 3;
+          ChecksumError = 1;
         }
       }
       break;
     case 12:
       {
-        String datoH_12 = checkFrame.substring(0, 4);
-        String datoI_12 = checkFrame.substring(4, 7);
-        String dateBinary12 = convertHex_int_toBinary(datoH_12, datoI_12);
-        String CRC_12_Calculate = OrderCRC(dateBinary12);
-        String CRC_12_Received = checkFrame.substring(7);
-        info = checkFrame.substring(4, 7);
-        Serial.println("CRC recibido: " + CRC_12_Received);
-        Serial.println("CRC calculado: " + CRC_12_Calculate);
-        if (CRC_12_Calculate = CRC_12_Received) {
-          return 2;
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 7);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(7);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
         } else {
-          return 3;
+          ChecksumError = 1;
         }
       }
       break;
     default:
       {
-        return 4;
-        Serial.println("Error");
+        Serial.println("The frame size is out of range. Error!!");
       }
       break;
   }
 }
 
-void enviarRtta(String state, int stateCRC, String CRC) {
-  String frame = "AA" + state + String(stateCRC) + CRC + "\n";
+void enviarRtta(String CRC) {
+  String StateByte_Send = convertBinary_toHex(ByteState);
+  String frame;
+  if (Info_to_Send == 0) {
+    frame = "AA" + StateByte_Send + CRC + "\n";
+  }else{
+    frame = "AA" + StateByte_Send + String(Info_to_Send) + CRC + "\n";
+  }
   Serial.println("Frame rtta Slave: " + frame);
   digitalWrite(RS485_PIN_MODE, HIGH);  // modo tx
   RS485Serial.print(frame);
@@ -322,6 +351,22 @@ String OrderCRC(String bin) {
   return CRCHex;
 }
 
+void verificarTension() {
+  int lectura = analogRead(PIN_TENSION);
+  float tension = lectura * (5.0 / 1023.0);
+  if (tension >= minTension && tension <= maxTension) {
+    powerOn = 1;
+  } else {
+    powerOn = 0;
+  }
+}
+
+String hexToBinary(String hexString) {
+  unsigned int hexValue = strtol(hexString.c_str(), NULL, 16);
+  String binaryString = String(hexValue, BIN);
+  return binaryString;
+}
+
 String convertHex_int_toBinary(String dataHex, String dataInt) {
   long aux = strtol(dataHex.c_str(), NULL, 16);
   String BinaryDateHex = String(aux, BIN);
@@ -338,4 +383,12 @@ String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   String BinaryDateInt = String(aux2, BIN);
   String BinaryComplete = BinaryDateHex + BinaryDateInt;
   return BinaryComplete;
+}
+
+String convertBinary_toHex(String binario) {
+  unsigned long decimal = strtol(binario.c_str(), NULL, 2);
+  char hex[9];
+  sprintf(hex, "%X", decimal);
+  String resultadoHex = String(hex);
+  return resultadoHex;
 }
