@@ -1,0 +1,40 @@
+Trabajo de Implementación – Comunicaciones de Sistemas Electrónicos
+Objetivo: Desarrollar un protocolo de comunicación utilizando la norma RS485 para el control de actuadores,
+          adquisición de datos y configuración de puertas en dispositivos electrónicos. 
+Entre las actividades previstas están:
+    -->Controlar motores dc, servomotores y/o motores de paso por ejemplo de un brazo robótico.
+    -->El protocolo a ser implementado debe posibilitar la comunicación entre el Maestro y los esclavos (otros dispositivos).
+    -->El Maestro deberá estár en capacidad de enviar parámetros de configuración, comandos y recibir informaciones de los dispositivos.
+Cuando existen varios controladores conectados en un mismo bus, se necesita que cada uno de ellos tenga su propia dirección individual
+para que se le puedan enviar comandos.
+Al ser iniciados, todos los controladores comienzan con la dirección individual 0x00.
+En complemento al direccionamiento individual, considere que la dirección individual puede asumir un valor entre 0 y 255.
+El maestro no debe enviar ningún otro comando hasta que el paquete de estado se haya recibido para asegurar que no sobre-escriba 
+cualquier dato de comando todavía en uso.
+
+Comandos del maestro:
+--Byte de encabezado (definido como 0xAA)
+--Byte de dirección – individual (0x00 – 0xFF)
+--Byte de comando 0 – 15 bytes de datos
+--Byte de checksum – CRC
+--El byte de comando es dividido en Nibbles alto y bajo: Nibble bajo (4 bits menos significativos) es el valor del comando; 
+  el Nibble alto (4 bits mas significativos) es el número de bytes adicionales de datos, el cual seguirá el código de comando.
+--El byte de checksum es la suma de 16 bits del byte de dirección, byte de comando y dos bytes de datos
+
+Comando del Esclavo:
+--El esclavo siempre inicia una transmisión de respuesta cuando es interrogado por el maestro.
+--Después de que el comando es recibido y ejecutado, el controlador correspondiente envía un paquete de estado que consta de:
+    1. Byte de estado
+    2. 0-16 bytes de datos opcionales
+    3. 2 bytes de checksum 
+
+Observe que el primer byte enviado debe ser el byte de estado, incluyendo el bit de error de checksum para el comando recibido.
+Los bytes de datos opcionales deben contener información de posición, velocidad, etc. y que será programado por el maestro. 
+Todos los bits son envidos con el bit menos significativos primero.
+
+Procesamiento de los comandos:
+El esclavo recibe todos los datos presentes en la recepción serial, los ordena en la forma de un vector de comando, que comienza 
+con el encabezado y termina en el checksum. El vector de bytes que almacena el comando no incluye el encabezado y tampoco el byte 
+de dirección.Claramente debe haber un procesamiento secuencial de los bytes que llegan provenientes del maestro y que indican un 
+estado que puede estar dentro de las siguientes definiciones: Esperando el encabezado, esperando la dirección, esperando comando 
+y esperando el número de datos. En caso de que el byte de encabezado sea diferente de 0xAA la información deberá ser ignorada
