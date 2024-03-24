@@ -10,10 +10,10 @@
 #define Distancia_Maxima 200
 NewPing sensor(TRIG_PIN, ECHO_PIN, Distancia_Maxima);
 
-#define PIN_IN1 3
-#define PIN_IN2 4
-#define PIN_IN3 5
-#define PIN_IN4 6
+#define PIN_IN1 2
+#define PIN_IN2 3
+#define PIN_IN3 4
+#define PIN_IN4 5
 #define PIN_OUT1 7
 #define PIN_OUT2 8
 #define PIN_OUT3 9
@@ -26,7 +26,7 @@ const float maxTension = 5.0;
 #define RS485_BAUD 9600    // Velocidad de comunicación RS-485
 #define RS485_PIN_MODE 13  // HIGH: Tx; LOW: Rx
 #define MY_SLAVE_ID 0
-#define SERVO_PIN 2
+#define SERVO_PIN 6
 
 
 SoftwareSerial RS485Serial(12, 11);  // RX, TX
@@ -40,7 +40,8 @@ int powerOn;
 int positionError;
 int valorLimit1;
 int valorLimit2;
-int homeInProgress;
+//int homeInProgress;
+int StatePin;
 int Info_to_Send;
 String ByteState;
 
@@ -73,7 +74,7 @@ void loop() {
     positionError = 0;
     valorLimit1 = 0;
     valorLimit2 = 0;
-    homeInProgress = 0;
+    StatePin = 0;
     Info_to_Send = 0;
 
     String receivedFrame = RS485Serial.readStringUntil('\n');
@@ -91,7 +92,7 @@ void loop() {
           ejecutarAccion(cmd);
         }
         verificarTension();
-        ByteState = String(MoveDone) + String(ChecksumError) + String(OverCurrent) + String(powerOn) + String(positionError) + String(valorLimit1) + String(valorLimit2) + String(homeInProgress);
+        ByteState = String(MoveDone) + String(ChecksumError) + String(OverCurrent) + String(powerOn) + String(positionError) + String(valorLimit1) + String(valorLimit2) + String(StatePin);
         if (Info_to_Send == 0) {
           String rttaCompleteBinary = ByteState;
           String CRC_Send_Calculate = OrderCRC(rttaCompleteBinary);
@@ -140,66 +141,100 @@ void ejecutarAccion(String cmd) {
         }
       }
       break;
-    case 3:
-      {
-        //Cantidad de respuestas
-        for (int i = 0; i < inf; i++) {
-          int distancia = lecturaSensor();
-          lastSensorValue = distancia;
-          delay(50);
-          Info_to_Send = distancia;
-        }
-      }
-      break;
+    case 3:{
+      pinMode(PIN_IN1, INPUT);
+      pinMode(PIN_IN2, INPUT);
+      pinMode(PIN_IN3, INPUT);
+      pinMode(PIN_IN4, INPUT);
+      pinMode(PIN_OUT1, OUTPUT);
+      pinMode(PIN_OUT2, OUTPUT);
+      pinMode(PIN_OUT3, OUTPUT);
+      pinMode(PIN_OUT4, OUTPUT);
+      MoveDone = 1;
+      }break;
     case 4:
       {
-        pinMode(PIN_IN1, INPUT);
-        pinMode(PIN_IN2, INPUT);
-        pinMode(PIN_IN3, INPUT);
-        pinMode(PIN_IN4, INPUT);
-        pinMode(PIN_OUT1, OUTPUT);
-        pinMode(PIN_OUT2, OUTPUT);
-        pinMode(PIN_OUT3, OUTPUT);
-        pinMode(PIN_OUT4, OUTPUT);
-        MoveDone = 1;
+        //Identificar cual pin desea conocer el estado
+        switch (inf) 
+        {
+          case 2:{
+            if (digitalRead(PIN_IN1) == HIGH) {
+              StatePin = 1;
+              MoveDone = 1;
+            }else{
+              StatePin = 0;
+              MoveDone = 1;
+             }
+            }break;
+          case 3:{
+            if (digitalRead(PIN_IN2) == HIGH) {
+              StatePin = 1;
+              MoveDone = 1;
+            }else{
+              StatePin = 0;
+              MoveDone = 1;
+             }
+            }break;
+          case 4:{
+            if (digitalRead(PIN_IN3) == HIGH) {
+              StatePin = 1;
+              MoveDone = 1;
+            }else{
+              StatePin = 0;
+              MoveDone = 1;
+             }
+            }break;
+          case 5:{
+            if (digitalRead(PIN_IN4) == HIGH) {
+              StatePin = 1;
+              MoveDone = 1;
+            }else{
+              StatePin = 0;
+              MoveDone = 1;
+             }
+            }break;
+          default:{
+            MoveDone = 0;
+            break;
+          }
+        }
       }
       break;
     case 5:
       {
-        switch (inf) {
-          case 3:
-            {
-              if (digitalRead(PIN_IN1) == HIGH) {
-                Info_to_Send = 1;
-              }
-              else{
-                Info_to_Send = 2;
-              }
-            }
+        int pin = info.substring(0, 1).toInt();
+        int inf = info.substring(1, 2).toInt();
+        switch (pin) 
+        {
+          case 7:{
+            digitalWrite(PIN_OUT1, inf);
+            MoveDone = 1;
+          }break;
+          case 8:{
+            digitalWrite(PIN_OUT2, inf);
+            MoveDone = 1;
+          }break;
+          case 9:{
+            digitalWrite(PIN_OUT3, inf);
+            MoveDone = 1;
+          }break;
+          case 10:{
+            digitalWrite(PIN_OUT1, inf);
+            MoveDone = 1;
+          }break;
+          default:{
+            MoveDone = 0;
             break;
-          case 4:
-            {
-            }
-            break;
-          case 5:
-            {
-            }
-            break;
-          case 6:
-            {
-            }
-            break;
-          default:
-            {
-              break;
-            }
+          }
         }
       }
       break;
-    case 6:
-      {
-      }
-      break;
+    case 6:{
+      int distancia = lecturaSensor();
+      lastSensorValue = distancia;
+      MoveDone = 1;
+      Info_to_Send = distancia;
+    }break;
     case 7:
       {
         if (inf >= 90 && inf <= 180) {
@@ -212,10 +247,6 @@ void ejecutarAccion(String cmd) {
       break;
     case 8:
       {
-        int distancia = lecturaSensor();
-        lastSensorValue = distancia;
-        MoveDone = 1;
-        Info_to_Send = distancia;
       }
       break;
     default:

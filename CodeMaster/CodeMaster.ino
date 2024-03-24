@@ -171,7 +171,7 @@ uint16_t crc16(uint8_t *data, uint16_t len) {
     for (uint8_t j = 0; j < 8; ++j) {
       if (crc & 0x0001) {
         crc >>= 1;
-        crc ^= 0xA001;
+        crc ^= 0xA001; 
       } else {
         crc >>= 1;
       }
@@ -207,7 +207,7 @@ void showInfo(String info) {
 void evaluateBits(String byteEstado) {
   Serial.println();
   Serial.println("Status byte result");
-  String acciones[] = {"MoveDone", "ChecksumError", "OverCurrent", "PowerOn", "PositionError", "ValorLimit1", "ValorLimit2", "HomeInProgress"};
+  String acciones[] = {"MoveDone", "ChecksumError", "OverCurrent", "PowerOn", "PositionError", "ValorLimit1", "ValorLimit2", "statePinHigh"};
   int longitud = byteEstado.length();
   for (int i = 0; i < longitud; i++) {
     char bit = byteEstado.charAt(i);
