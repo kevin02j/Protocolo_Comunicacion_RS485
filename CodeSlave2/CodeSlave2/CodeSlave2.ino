@@ -1,28 +1,25 @@
-#include <SoftwareSerial.h>
-#include <Servo.h>
-#include <Arduino.h>
-#include <String.h>
+#include <HardwareSerial.h>
+#include <ESP32Servo.h>
 #include <EEPROM.h>
+HardwareSerial RS485Serial(2);
 
-#define PIN_IN1 5
-#define PIN_IN2 6
-#define PIN_OUT1 7
-#define PIN_OUT2 8
+#define PIN_IN1 14
+#define PIN_IN2 27
+#define PIN_OUT1 26
+#define PIN_OUT2 25
 
-#define PIN_PWM 9
+#define PIN_PWM 12
 
-#define PIN_TENSION A0
-const float minTension = 1.5;
-const float maxTension = 5.0;
+#define PIN_TENSION 13
+const float minTension = 0.1;
+const float maxTension = 3.3;
 
 #define RS485_BAUD 9600    // Velocidad de comunicación RS-485
-#define RS485_PIN_MODE 11  // HIGH: Tx; LOW: Rx
+#define RS485_PIN_MODE 4  // HIGH: Tx; LOW: Rx
 #define MY_SLAVE_ID 0
-#define SERVO_BASE_PIN 13
-#define SERVO_PINZA_PIN 4
+#define SERVO_BASE_PIN 34
+#define SERVO_PINZA_PIN 35
 
-
-SoftwareSerial RS485Serial(12, 10);  // RX, TX
 Servo servoBase;
 Servo servoPinza;
 
@@ -50,9 +47,9 @@ String info;
 int lastSensorValue = 0;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(115200);
   pinMode(RS485_PIN_MODE, OUTPUT);
-  RS485Serial.begin(RS485_BAUD);
+  RS485Serial.begin(RS485_BAUD,SERIAL_8N1, 16, 17);
   digitalWrite(RS485_PIN_MODE, LOW);  // Rx
 
   int PruebaID = EEPROM.read(MY_SLAVE_ID);
@@ -281,203 +278,204 @@ void ejecutarAccion(String cmd) {
             break;
         }
         break;
-        case 11:
-          {
-            //
-          }
-          break;
-        default:
-          {
-            Serial.println("command limit out");
-          }
-          break;
       }
-    }
+      break;
+    case 11:
+      {
+        //
+      }
+      break;
+    default:
+      {
+        Serial.println("command limit out");
+      }
+      break;
+  }
 }
 
-  void checksum(String checkFrame) {
-    uint8_t sizeF = checkFrame.length();
-    switch (sizeF) {
-      case 9:
-        {
-          dateHex = checkFrame.substring(0, 4);
-          dateBinary = hexToBinary(dateHex);
-          CRC_Received = checkFrame.substring(4);
-          CRC_Calculate = OrderCRC(dateBinary);
-          Serial.println("CRC received: " + CRC_Received);
-          Serial.println("CRC calculate: " + CRC_Calculate);
-          if (CRC_Calculate = CRC_Received) {
-            ChecksumError = 0;
-          } else {
-            ChecksumError = 1;
-          }
-        }
-        break;
-      case 10:
-        {
-          dateHex = checkFrame.substring(0, 4);
-          dateInt = checkFrame.substring(4, 5);
-          dateBinary = convertHex_int_toBinary(dateHex, dateInt);
-          String CRC_Received = checkFrame.substring(5);
-          String CRC_Calculate = OrderCRC(dateBinary);
-          info = dateInt;
-          Serial.println("CRC received: " + CRC_Received);
-          Serial.println("CRC calculate: " + CRC_Calculate);
-          if (CRC_Calculate = CRC_Received) {
-            ChecksumError = 0;
-          } else {
-            ChecksumError = 1;
-          }
-        }
-        break;
-      case 11:
-        {
-          dateHex = checkFrame.substring(0, 4);
-          dateInt = checkFrame.substring(4, 6);
-          dateBinary = convertHex_int_toBinary(dateHex, dateInt);
-          String CRC_Received = checkFrame.substring(6);
-          String CRC_Calculate = OrderCRC(dateBinary);
-          info = dateInt;
-          Serial.println("CRC received: " + CRC_Received);
-          Serial.println("CRC calculate: " + CRC_Calculate);
-          if (CRC_Calculate = CRC_Received) {
-            ChecksumError = 0;
-          } else {
-            ChecksumError = 1;
-          }
-        }
-        break;
-      case 12:
-        {
-          dateHex = checkFrame.substring(0, 4);
-          dateInt = checkFrame.substring(4, 7);
-          dateBinary = convertHex_int_toBinary(dateHex, dateInt);
-          String CRC_Received = checkFrame.substring(7);
-          String CRC_Calculate = OrderCRC(dateBinary);
-          info = dateInt;
-          Serial.println("CRC received: " + CRC_Received);
-          Serial.println("CRC calculate: " + CRC_Calculate);
-          if (CRC_Calculate = CRC_Received) {
-            ChecksumError = 0;
-          } else {
-            ChecksumError = 1;
-          }
-        }
-        break;
-      case 13:
-        {
-          dateHex = checkFrame.substring(0, 4);
-          dateInt = checkFrame.substring(4, 8);
-          dateBinary = convertHex_int_toBinary(dateHex, dateInt);
-          String CRC_Received = checkFrame.substring(8);
-          String CRC_Calculate = OrderCRC(dateBinary);
-          info = dateInt;
-          Serial.println("CRC received: " + CRC_Received);
-          Serial.println("CRC calculate: " + CRC_Calculate);
-          if (CRC_Calculate = CRC_Received) {
-            ChecksumError = 0;
-          } else {
-            ChecksumError = 1;
-          }
-        }
-        break;
-      default:
-        {
-          Serial.println("The frame size is out of range. Error!!");
-        }
-        break;
-    }
-  }
-
-  void enviarRtta(String CRC) {
-    String StateByte_Send = convertBinary_toHex(ByteState);
-    String frame;
-    if (Info_to_Send == 0) {
-      frame = "AA" + StateByte_Send + CRC + "\n";
-    } else {
-      frame = "AA" + StateByte_Send + String(Info_to_Send) + CRC + "\n";
-    }
-    Serial.println("Frame rtta Slave: " + frame);
-    digitalWrite(RS485_PIN_MODE, HIGH);  // modo tx
-    RS485Serial.print(frame);
-    RS485Serial.flush();
-    digitalWrite(RS485_PIN_MODE, LOW);  // modo rx
-  }
-
-  // int lecturaSensor() {
-  //   int cm = sensor.ping_cm();  // Medir la distancia en centímetros
-  //   if (cm == 0) {
-  //     //Serial.println("¡No se detectó ningún objeto!");
-  //     return 250;
-  //   } else {
-  //     return cm;
-  //   }
-  // }
-
-  uint16_t crc16(uint8_t * data, uint16_t len) {
-    uint16_t crc = 0xFFFF;
-    for (uint16_t i = 0; i < len; ++i) {
-      crc ^= data[i];
-      for (uint8_t j = 0; j < 8; ++j) {
-        if (crc & 0x0001) {
-          crc >>= 1;
-          crc ^= 0xA001;
+void checksum(String checkFrame) {
+  uint8_t sizeF = checkFrame.length();
+  switch (sizeF) {
+    case 9:
+      {
+        dateHex = checkFrame.substring(0, 4);
+        dateBinary = hexToBinary(dateHex);
+        CRC_Received = checkFrame.substring(4);
+        CRC_Calculate = OrderCRC(dateBinary);
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
         } else {
-          crc >>= 1;
+          ChecksumError = 1;
         }
       }
+      break;
+    case 10:
+      {
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 5);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(5);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
+        } else {
+          ChecksumError = 1;
+        }
+      }
+      break;
+    case 11:
+      {
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 6);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(6);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
+        } else {
+          ChecksumError = 1;
+        }
+      }
+      break;
+    case 12:
+      {
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 7);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(7);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
+        } else {
+          ChecksumError = 1;
+        }
+      }
+      break;
+    case 13:
+      {
+        dateHex = checkFrame.substring(0, 4);
+        dateInt = checkFrame.substring(4, 8);
+        dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        String CRC_Received = checkFrame.substring(8);
+        String CRC_Calculate = OrderCRC(dateBinary);
+        info = dateInt;
+        Serial.println("CRC received: " + CRC_Received);
+        Serial.println("CRC calculate: " + CRC_Calculate);
+        if (CRC_Calculate = CRC_Received) {
+          ChecksumError = 0;
+        } else {
+          ChecksumError = 1;
+        }
+      }
+      break;
+    default:
+      {
+        Serial.println("The frame size is out of range. Error!!");
+      }
+      break;
+  }
+}
+
+void enviarRtta(String CRC) {
+  String StateByte_Send = convertBinary_toHex(ByteState);
+  String frame;
+  if (Info_to_Send == 0) {
+    frame = "AA" + StateByte_Send + CRC + "\n";
+  } else {
+    frame = "AA" + StateByte_Send + String(Info_to_Send) + CRC + "\n";
+  }
+  Serial.println("Frame rtta Slave: " + frame);
+  digitalWrite(RS485_PIN_MODE, HIGH);  // modo tx
+  RS485Serial.print(frame);
+  RS485Serial.flush();
+  digitalWrite(RS485_PIN_MODE, LOW);  // modo rx
+}
+
+// int lecturaSensor() {
+//   int cm = sensor.ping_cm();  // Medir la distancia en centímetros
+//   if (cm == 0) {
+//     //Serial.println("¡No se detectó ningún objeto!");
+//     return 250;
+//   } else {
+//     return cm;
+//   }
+// }
+
+uint16_t crc16(uint8_t *data, uint16_t len) {
+  uint16_t crc = 0xFFFF;
+  for (uint16_t i = 0; i < len; ++i) {
+    crc ^= data[i];
+    for (uint8_t j = 0; j < 8; ++j) {
+      if (crc & 0x0001) {
+        crc >>= 1;
+        crc ^= 0xA001;
+      } else {
+        crc >>= 1;
+      }
     }
-    return crc;
   }
+  return crc;
+}
 
-  String OrderCRC(String bin) {
-    char buf[33];
-    bin.toCharArray(buf, 33);
-    int sz = bin.length();
-    uint16_t crc = crc16((uint8_t *)buf, sz);
-    String CRCHex = String(crc, HEX);
-    CRCHex.toUpperCase();
-    return CRCHex;
-  }
+String OrderCRC(String bin) {
+  char buf[33];
+  bin.toCharArray(buf, 33);
+  int sz = bin.length();
+  uint16_t crc = crc16((uint8_t *)buf, sz);
+  String CRCHex = String(crc, HEX);
+  CRCHex.toUpperCase();
+  return CRCHex;
+}
 
-  void verificarTension() {
-    int lectura = analogRead(PIN_TENSION);
-    float tension = lectura * (5.0 / 1023.0);
-    if (tension >= minTension && tension <= maxTension) {
-      powerOn = 1;
-    } else {
-      powerOn = 0;
-    }
+void verificarTension() {
+  int lectura = analogRead(PIN_TENSION);
+  float tension = lectura * (3.3 / 1023.0);
+  if (tension >= minTension && tension <= maxTension) {
+    powerOn = 1;
+  } else {
+    powerOn = 0;
   }
+}
 
-  String hexToBinary(String hexString) {
-    unsigned int hexValue = strtol(hexString.c_str(), NULL, 16);
-    String binaryString = String(hexValue, BIN);
-    return binaryString;
-  }
+String hexToBinary(String hexString) {
+  unsigned int hexValue = strtol(hexString.c_str(), NULL, 16);
+  String binaryString = String(hexValue, BIN);
+  return binaryString;
+}
 
-  String convertHex_int_toBinary(String dataHex, String dataInt) {
-    long aux = strtol(dataHex.c_str(), NULL, 16);
-    String BinaryDateHex = String(aux, BIN);
-    long aux2 = strtol(dataInt.c_str(), NULL, 10);
-    String BinaryDateInt = String(aux2, BIN);
-    String BinaryComplete = BinaryDateHex + BinaryDateInt;
-    return BinaryComplete;
-  }
+String convertHex_int_toBinary(String dataHex, String dataInt) {
+  long aux = strtol(dataHex.c_str(), NULL, 16);
+  String BinaryDateHex = String(aux, BIN);
+  long aux2 = strtol(dataInt.c_str(), NULL, 10);
+  String BinaryDateInt = String(aux2, BIN);
+  String BinaryComplete = BinaryDateHex + BinaryDateInt;
+  return BinaryComplete;
+}
 
-  String convertInt_toBinary(String dataInt_1, String dataInt_2) {
-    long aux = strtol(dataInt_1.c_str(), NULL, 10);
-    String BinaryDateHex = String(aux, BIN);
-    long aux2 = strtol(dataInt_2.c_str(), NULL, 10);
-    String BinaryDateInt = String(aux2, BIN);
-    String BinaryComplete = BinaryDateHex + BinaryDateInt;
-    return BinaryComplete;
-  }
+String convertInt_toBinary(String dataInt_1, String dataInt_2) {
+  long aux = strtol(dataInt_1.c_str(), NULL, 10);
+  String BinaryDateHex = String(aux, BIN);
+  long aux2 = strtol(dataInt_2.c_str(), NULL, 10);
+  String BinaryDateInt = String(aux2, BIN);
+  String BinaryComplete = BinaryDateHex + BinaryDateInt;
+  return BinaryComplete;
+}
 
-  String convertBinary_toHex(String binario) {
-    unsigned long decimal = strtol(binario.c_str(), NULL, 2);
-    char hex[9];
-    sprintf(hex, "%X", decimal);
-    String resultadoHex = String(hex);
-    return resultadoHex;
-  }
+String convertBinary_toHex(String binario) {
+  unsigned long decimal = strtol(binario.c_str(), NULL, 2);
+  char hex[9];
+  sprintf(hex, "%X", decimal);
+  String resultadoHex = String(hex);
+  return resultadoHex;
+}
