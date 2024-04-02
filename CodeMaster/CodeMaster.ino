@@ -3,9 +3,9 @@
 #include <Wire.h>
 
 #define RS485_BAUD 9600   // Velocidad de comunicación RS-485
-#define RS485_PIN_MODE 2  // HIGH: Tx; LOW: Rx
+#define RS485_PIN_MODE 3  // HIGH: Tx; LOW: Rx
 
-SoftwareSerial RS485Serial(3, 4);  // RX, TX
+SoftwareSerial RS485Serial(4, 2);  // RX, TX
 
 //Variables para almacenar la rtta del esclavo
 String ByteState;
