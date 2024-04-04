@@ -1,24 +1,33 @@
 #include <HardwareSerial.h>
 #include <ESP32Servo.h>
 #include <EEPROM.h>
+#include <DHT.h>
+#include <esp_system.h>
 HardwareSerial RS485Serial(2);
 
-#define PIN_IN1 14
-#define PIN_IN2 27
-#define PIN_OUT1 26
-#define PIN_OUT2 25
+#define DHTPIN 5
+#define DHTTYPE DHT22
+DHT dht(DHTPIN, DHTTYPE);
 
-#define PIN_PWM 12
+#define PIN_IN1 26
+#define PIN_IN2 32
+#define PIN_OUT1 18
+#define PIN_OUT2 19
 
-#define PIN_TENSION 13
-const float minTension = 0.1;
-const float maxTension = 3.3;
+#define PIN_PWM1 27
+#define PIN_PWM2 25
+#define ADC_1 34
 
-#define RS485_BAUD 9600    // Velocidad de comunicación RS-485
+const int POT_ADC_1 = 34;
+const int PIN_TENSION = 13;
+const float minTension = 0.0;
+const float maxTension = 5.0;
+
+#define RS485_BAUD 9600   // Velocidad de comunicación RS-485
 #define RS485_PIN_MODE 4  // HIGH: Tx; LOW: Rx
-#define MY_SLAVE_ID 0
-#define SERVO_BASE_PIN 34
-#define SERVO_PINZA_PIN 35
+int MY_SLAVE_ID = 0;
+#define SERVO_BASE_PIN 12
+#define SERVO_PINZA_PIN 14
 
 Servo servoBase;
 Servo servoPinza;
@@ -28,7 +37,7 @@ int MoveDone;
 int ChecksumError;
 int OverCurrent;
 int powerOn;
-int positionError;
+int configError;
 int valorLimit1;
 int valorLimit2;
 //int homeInProgress;
@@ -45,15 +54,20 @@ String CRC_Calculate;
 String info;
 
 int lastSensorValue = 0;
+int configIO_FLag = 0;
+int configPWM_Flag = 0;
+int configSERVO_Flag = 0;
 
 void setup() {
   Serial.begin(115200);
   pinMode(RS485_PIN_MODE, OUTPUT);
-  RS485Serial.begin(RS485_BAUD,SERIAL_8N1, 16, 17);
+  RS485Serial.begin(RS485_BAUD, SERIAL_8N1, 16, 17);
   digitalWrite(RS485_PIN_MODE, LOW);  // Rx
-
-  int PruebaID = EEPROM.read(MY_SLAVE_ID);
-  Serial.println("my Id: " + String(PruebaID));
+  EEPROM.begin(512);
+  uint8_t PruebaID = EEPROM.get(MY_SLAVE_ID, PruebaID);
+  Serial.print("Mi ID: ");
+  Serial.println(String(PruebaID, HEX));
+  dht.begin();
 }
 
 void loop() {
@@ -62,18 +76,19 @@ void loop() {
     ChecksumError = 0;
     OverCurrent = 0;
     powerOn = 0;
-    positionError = 0;
+    configError = 0;
     valorLimit1 = 0;
     valorLimit2 = 0;
     StatePin = 0;
     Info_to_Send = 0;
 
     String receivedFrame = RS485Serial.readStringUntil('\n');
+    Serial.println(receivedFrame);
 
     if (receivedFrame.startsWith("AA")) {
       String ID_Slave = receivedFrame.substring(2, 4);
-      int IdEEprom = EEPROM.read(MY_SLAVE_ID);
-      int idInt = ID_Slave.toInt();
+      int idInt = hex_to_decimal(ID_Slave);
+      uint8_t IdEEprom = EEPROM.get(MY_SLAVE_ID, IdEEprom);
       if (idInt == IdEEprom) {
         String dataUseful = receivedFrame.substring(2);
         checksum(dataUseful);
@@ -83,7 +98,7 @@ void loop() {
           ejecutarAccion(cmd);
         }
         verificarTension();
-        ByteState = String(MoveDone) + String(ChecksumError) + String(OverCurrent) + String(powerOn) + String(positionError) + String(valorLimit1) + String(valorLimit2) + String(StatePin);
+        ByteState = String(MoveDone) + String(ChecksumError) + String(OverCurrent) + String(powerOn) + String(configError) + String(valorLimit1) + String(valorLimit2) + String(StatePin);
         if (Info_to_Send == 0) {
           String rttaCompleteBinary = ByteState;
           String CRC_Send_Calculate = OrderCRC(rttaCompleteBinary);
@@ -107,15 +122,15 @@ void ejecutarAccion(String cmd) {
   long hexValue = strtol(cmd.c_str(), NULL, 16);
   int cmdInt = static_cast<int>(hexValue);
   // int cmdInt = cmd.toInt();
-  Serial.println(cmdInt);
+  //Serial.println(cmdInt);
   int inf = info.toInt();
   switch (cmdInt) {
     case 1:
       {
         //Asignar Id al esclavo
-        Serial.println("Informacion String: " + String(info));
+        Serial.println("New Id: " + String(info));
         Serial.println(inf);
-        if (inf >= 0 && inf <= 255) {
+        if (inf >= 0 && inf <= 247) {
           EEPROM.write(0, inf);  // 0-255
           MoveDone = 1;
         } else {
@@ -137,105 +152,148 @@ void ejecutarAccion(String cmd) {
       break;
     case 3:
       {
-        pinMode(PIN_IN1, INPUT);
-        pinMode(PIN_IN2, INPUT);
+        pinMode(PIN_IN1, INPUT_PULLDOWN); 
+        pinMode(PIN_IN2, INPUT_PULLDOWN); 
         pinMode(PIN_OUT1, OUTPUT);
         pinMode(PIN_OUT2, OUTPUT);
         MoveDone = 1;
+        configIO_FLag = 1;
       }
       break;
     case 4:
       {
-        //Identificar cual pin desea conocer el estado
-        switch (inf) {
-          case 5:
-            {
-              if (digitalRead(PIN_IN1) == HIGH) {
-                StatePin = 1;
-                MoveDone = 1;
-              } else {
-                StatePin = 0;
-                MoveDone = 1;
+        if (configIO_FLag == 1) {
+          //Identificar cual pin desea conocer el estado
+          switch (inf) {
+            case 1:
+              {
+                if (digitalRead(PIN_IN1) == HIGH) {
+                  StatePin = 1;
+                  MoveDone = 1;
+                } else {
+                  StatePin = 0;
+                  MoveDone = 1;
+                }
               }
-            }
-            break;
-          case 6:
-            {
-              if (digitalRead(PIN_IN2) == HIGH) {
-                StatePin = 1;
-                MoveDone = 1;
-              } else {
-                StatePin = 0;
-                MoveDone = 1;
-              }
-            }
-            break;
-          default:
-            {
-              MoveDone = 0;
               break;
-            }
+            case 2:
+              {
+                if (digitalRead(PIN_IN2) == HIGH) {
+                  StatePin = 1;
+                  MoveDone = 1;
+                } else {
+                  StatePin = 0;
+                  MoveDone = 1;
+                }
+              }
+              break;
+            default:
+              {
+                MoveDone = 0;
+                break;
+              }
+          }
+        } else {
+          configError = 1;
         }
       }
       break;
     case 5:
       {
-        int pin = info.substring(0, 1).toInt();
-        int inf = info.substring(1, 2).toInt();
-        switch (pin) {
-          case 7:
-            {
-              digitalWrite(PIN_OUT1, inf);
-              MoveDone = 1;
+        if (configIO_FLag == 1) {
+          int pin = info.substring(0, 1).toInt();
+          int inf = info.substring(1, 2).toInt();
+          if (inf == 0 || inf == 1) {
+            switch (pin) {
+              case 1:
+                {
+                  digitalWrite(PIN_OUT1, inf);
+                  MoveDone = 1;
+                }
+                break;
+              case 2:
+                {
+                  digitalWrite(PIN_OUT2, inf);
+                  MoveDone = 1;
+                }
+                break;
+              default:
+                {
+                  MoveDone = 0;
+                  break;
+                }
             }
-            break;
-          case 8:
-            {
-              digitalWrite(PIN_OUT2, inf);
-              MoveDone = 1;
-            }
-            break;
-          default:
-            {
-              MoveDone = 0;
-              break;
-            }
+          } else {
+            MoveDone = 0;
+          }
+        } else {
+          configError = 1;
         }
       }
       break;
     case 6:
       {
-        //Leer conversor AD
-        // int distancia = lecturaSensor();
-        // lastSensorValue = distancia;
-        // MoveDone = 1;
-        // Info_to_Send = distancia;
-      }
-      break;
-    case 7:
-      {
-        // Config PWM
-        pinMode(PIN_PWM, OUTPUT);
-        analogWrite(PIN_PWM, 1);
-        MoveDone = 1;
-      }
-      break;
-    case 8:
-      {
-        int channelPWM = info.substring(0, 1).toInt();
-        int PWM = info.substring(1, 2).toInt();
-        switch (channelPWM) {
+        switch (inf) {
           case 1:
             {
-              analogWrite(PIN_PWM, PWM);
+              analogSetPinAttenuation(ADC_1, ADC_11db);  //Config ADC_1 para entrada analogica
+              int lecturaADC = analogRead(ADC_1);
+              int valorMapeado = map(lecturaADC, 0, 4095, 1, 255);
+              Serial.println(valorMapeado);
+              Info_to_Send = valorMapeado;
               MoveDone = 1;
             }
             break;
           default:
             {
-              Serial.println("channel incorrect");
+              Serial.println("Channel ADC incorrect");
+              MoveDone = 0;
             }
             break;
+        }
+      }
+      break;
+    case 7:
+      {
+        // Config PWM
+        pinMode(PIN_PWM1, OUTPUT);
+        pinMode(PIN_PWM2, OUTPUT);
+        analogWrite(PIN_PWM1, 1);
+        analogWrite(PIN_PWM2, 1);
+        MoveDone = 1;
+        configPWM_Flag = 1;
+      }
+      break;
+    case 8:
+      {
+        if (configPWM_Flag == 1) {
+          int channelPWM = info.substring(0, 1).toInt();
+          int PWM = info.substring(1).toInt();
+          if (PWM >= 0 && PWM < 255) {
+            switch (channelPWM) {
+              case 1:
+                {
+                  analogWrite(PIN_PWM1, PWM);
+                  MoveDone = 1;
+                }
+                break;
+              case 2:
+                {
+                  analogWrite(PIN_PWM2, PWM);
+                  MoveDone = 1;
+                }
+                break;
+              default:
+                {
+                  Serial.println("channel incorrect");
+                }
+                break;
+            }
+          } else {
+            MoveDone = 0;
+          }
+        } else {
+          configError = 1;
         }
       }
       break;
@@ -243,46 +301,61 @@ void ejecutarAccion(String cmd) {
       {
         servoBase.attach(SERVO_BASE_PIN);
         servoPinza.attach(SERVO_PINZA_PIN);
-        servoBase.write(50);
-        servoPinza.write(170);
+        servoBase.write(90);
+        servoPinza.write(30);
         MoveDone = 1;
+        configSERVO_Flag = 1;
       }
       break;
     case 10:
       {
-        int controlServos = info.substring(0, 1).toInt();
-        int angle = info.substring(1).toInt();
-        switch (controlServos) {
-          case 1:
-            {
-              //Servo base
-              if (angle >= 0 && angle <= 180) {
-                servoBase.write(angle);
-                MoveDone = 1;
+        if (configSERVO_Flag == 1) {
+          int controlServos = info.substring(0, 1).toInt();
+          int angle = info.substring(1).toInt();
+          switch (controlServos) {
+            case 1:
+              {
+                //Servo Bbase
+                if (angle >= 0 && angle <= 180) {
+                  servoBase.write(angle);
+                  MoveDone = 1;
+                }
               }
-            }
-            break;
-          case 2:
-            {
-              //Servo pinza
-              if (angle >= 80 && angle <= 120) {
-                servoPinza.write(angle);
-                MoveDone = 1;
+              break;
+            case 2:
+              {
+                //Servo pinza
+                if (angle >= 30 && angle <= 180) {
+                  servoPinza.write(angle);
+                  MoveDone = 1;
+                }
               }
-            }
-            break;
-          default:
-            {
-              Serial.println("Channel servo error!!!");
-            }
-            break;
+              break;
+            default:
+              {
+                Serial.println("Channel servo error!!!");
+              }
+              break;
+          }
+        } else {
+          configError = 1;
         }
         break;
       }
       break;
     case 11:
       {
-        //
+        //Read Sensor Temperature
+        int temperatura = dht.readTemperature();
+        Serial.println("TEMP:" + String(temperatura));
+        Info_to_Send = temperatura;
+        MoveDone = 1;
+      }
+      break;
+    case 12:
+      {
+        MoveDone = 1;
+        //ESP.restart();
       }
       break;
     default:
@@ -293,8 +366,11 @@ void ejecutarAccion(String cmd) {
   }
 }
 
+
 void checksum(String checkFrame) {
+  Serial.println(checkFrame);
   uint8_t sizeF = checkFrame.length();
+  Serial.println(sizeF);
   switch (sizeF) {
     case 9:
       {
@@ -304,28 +380,22 @@ void checksum(String checkFrame) {
         CRC_Calculate = OrderCRC(dateBinary);
         Serial.println("CRC received: " + CRC_Received);
         Serial.println("CRC calculate: " + CRC_Calculate);
-        if (CRC_Calculate = CRC_Received) {
-          ChecksumError = 0;
-        } else {
-          ChecksumError = 1;
-        }
+        compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
     case 10:
       {
         dateHex = checkFrame.substring(0, 4);
         dateInt = checkFrame.substring(4, 5);
+        Serial.println(dateInt);
         dateBinary = convertHex_int_toBinary(dateHex, dateInt);
+        Serial.println(dateBinary);
         String CRC_Received = checkFrame.substring(5);
         String CRC_Calculate = OrderCRC(dateBinary);
         info = dateInt;
         Serial.println("CRC received: " + CRC_Received);
         Serial.println("CRC calculate: " + CRC_Calculate);
-        if (CRC_Calculate = CRC_Received) {
-          ChecksumError = 0;
-        } else {
-          ChecksumError = 1;
-        }
+        compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
     case 11:
@@ -338,11 +408,7 @@ void checksum(String checkFrame) {
         info = dateInt;
         Serial.println("CRC received: " + CRC_Received);
         Serial.println("CRC calculate: " + CRC_Calculate);
-        if (CRC_Calculate = CRC_Received) {
-          ChecksumError = 0;
-        } else {
-          ChecksumError = 1;
-        }
+        compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
     case 12:
@@ -355,11 +421,7 @@ void checksum(String checkFrame) {
         info = dateInt;
         Serial.println("CRC received: " + CRC_Received);
         Serial.println("CRC calculate: " + CRC_Calculate);
-        if (CRC_Calculate = CRC_Received) {
-          ChecksumError = 0;
-        } else {
-          ChecksumError = 1;
-        }
+        compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
     case 13:
@@ -372,11 +434,7 @@ void checksum(String checkFrame) {
         info = dateInt;
         Serial.println("CRC received: " + CRC_Received);
         Serial.println("CRC calculate: " + CRC_Calculate);
-        if (CRC_Calculate = CRC_Received) {
-          ChecksumError = 0;
-        } else {
-          ChecksumError = 1;
-        }
+        compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
     default:
@@ -384,6 +442,19 @@ void checksum(String checkFrame) {
         Serial.println("The frame size is out of range. Error!!");
       }
       break;
+  }
+}
+
+void compareCRCs(String CRC_Received, String CRC_Calculate) {
+  // Convertir las cadenas hexadecimales a valores decimales
+  long receivedValue = strtol(CRC_Received.c_str(), NULL, 16);
+  long calculateValue = strtol(CRC_Calculate.c_str(), NULL, 16);
+
+  // Comparar los valores decimales e imprimir el resultado
+  if (receivedValue == calculateValue) {
+    ChecksumError = 0;
+  } else {
+    ChecksumError = 1;
   }
 }
 
@@ -440,7 +511,7 @@ String OrderCRC(String bin) {
 
 void verificarTension() {
   int lectura = analogRead(PIN_TENSION);
-  float tension = lectura * (3.3 / 1023.0);
+  float tension = lectura * (5.0 / 1023.0);
   if (tension >= minTension && tension <= maxTension) {
     powerOn = 1;
   } else {
@@ -478,4 +549,19 @@ String convertBinary_toHex(String binario) {
   sprintf(hex, "%X", decimal);
   String resultadoHex = String(hex);
   return resultadoHex;
+}
+
+int hex_to_decimal(String hex_string) {
+  unsigned int result = 0;
+  for (int i = 0; i < hex_string.length(); i++) {
+    char c = hex_string.charAt(i);
+    int digit = 0;
+    if (isdigit(c)) {
+      digit = c - '0';
+    } else {
+      digit = 10 + (toupper(c) - 'A');
+    }
+    result = 16 * result + digit;
+  }
+  return result;
 }

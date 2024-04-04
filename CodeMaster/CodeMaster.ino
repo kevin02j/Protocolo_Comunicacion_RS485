@@ -15,6 +15,7 @@ String binaryInfo;
 String CompleteBinary;
 String CRC_Calculate;
 String CRC_Received;
+int Checksum;
 
 void setup() {
   Serial.begin(9600);
@@ -63,9 +64,10 @@ void respuestaSlave() {
             Serial.println();
             Serial.println("CRC Received: " + CRC_Received);
             Serial.println("CRC Calculate: " + CRC_Calculate);
-            if (CRC_Calculate = CRC_Received) {
+            compareCRCs(CRC_Received, CRC_Calculate);
+            if(Checksum == 0){
               evaluateBits(binaryByteState);
-            } else {
+            }else {
               Serial.println("Data transmission error (slave-master)");
             }
           }
@@ -82,10 +84,11 @@ void respuestaSlave() {
             Serial.println();
             Serial.println("CRC Received: " + CRC_Received);
             Serial.println("CRC Calculate: " + CRC_Calculate);
-            if (CRC_Calculate = CRC_Received) {
+            compareCRCs(CRC_Received, CRC_Calculate);
+            if(Checksum == 0){
               evaluateBits(binaryByteState);
               showInfo(Information);
-            } else {
+            }else {
               Serial.println("Data transmission error (slave-master)");
             }
           }
@@ -102,10 +105,11 @@ void respuestaSlave() {
             Serial.println();
             Serial.println("CRC Received: " + CRC_Received);
             Serial.println("CRC Calculate: " + CRC_Calculate);
-            if (CRC_Calculate = CRC_Received) {
+            compareCRCs(CRC_Received, CRC_Calculate);
+            if(Checksum == 0){
               evaluateBits(binaryByteState);
               showInfo(Information);
-            } else {
+            }else {
               Serial.println("Data transmission error (slave-master)");
             }
           }
@@ -122,10 +126,11 @@ void respuestaSlave() {
             Serial.println();
             Serial.println("CRC Received: " + CRC_Received);
             Serial.println("CRC Calculate: " + CRC_Calculate);
-            if (CRC_Calculate = CRC_Received) {
+            compareCRCs(CRC_Received, CRC_Calculate);
+            if(Checksum == 0){
               evaluateBits(binaryByteState);
               showInfo(Information);
-            } else {
+            }else {
               Serial.println("Data transmission error (slave-master)");
             }
           }
@@ -142,10 +147,11 @@ void respuestaSlave() {
             Serial.println();
             Serial.println("CRC Received: " + CRC_Received);
             Serial.println("CRC Calculate: " + CRC_Calculate);
-            if (CRC_Calculate = CRC_Received) {
+            compareCRCs(CRC_Received, CRC_Calculate);
+            if(Checksum == 0){
               evaluateBits(binaryByteState);
               showInfo(Information);
-            } else {
+            }else {
               Serial.println("Data transmission error (slave-master)");
             }
           }
@@ -195,8 +201,14 @@ String getDataFrameBinary(String frame) {
   String dataInt = frame.substring(6);     //<DATE>
   String BinaryDateHex = String(strtoul(dataHex.c_str(), NULL, 16), BIN);
   String BinaryDateInt = String(strtoul(dataInt.c_str(), NULL, 10), BIN);
-  String dataFrameBinary = (BinaryDateInt.length() == 1) ? BinaryDateHex : (BinaryDateHex + BinaryDateInt);
-  return dataFrameBinary;
+  String dataFrameBinary;
+  if(dataInt.length() == 0){
+    dataFrameBinary = BinaryDateHex;
+    return dataFrameBinary;
+  }else{
+    dataFrameBinary = BinaryDateHex + BinaryDateInt;
+    return dataFrameBinary;
+  }
 }
 
 void showInfo(String info) {
@@ -204,10 +216,23 @@ void showInfo(String info) {
   Serial.println("Information received from slave: " + info);
 }
 
+void compareCRCs(String CRC_Received, String CRC_Calculate) {
+  // Convertir las cadenas hexadecimales a valores decimales
+  long receivedValue = strtol(CRC_Received.c_str(), NULL, 16);
+  long calculateValue = strtol(CRC_Calculate.c_str(), NULL, 16);
+
+  // Comparar los valores decimales e imprimir el resultado
+  if (receivedValue == calculateValue) {
+    Checksum = 0;
+  } else {
+    Checksum = 1;
+  }
+}
+
 void evaluateBits(String byteEstado) {
   Serial.println();
   Serial.println("Status byte result");
-  String acciones[] = {"MoveDone", "ChecksumError", "OverCurrent", "PowerOn", "PositionError", "ValorLimit1", "ValorLimit2", "statePinHigh"};
+  String acciones[] = {"MoveDone", "ChecksumError", "OverCurrent", "PowerOn", "ConfigError", "ValorLimit1", "ValorLimit2", "statePinHigh"};
   int longitud = byteEstado.length();
   for (int i = 0; i < longitud; i++) {
     char bit = byteEstado.charAt(i);
