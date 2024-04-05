@@ -1,8 +1,15 @@
+/*
+  Authors: Kevin Certuche & Wilson Guerrero 
+  Date: 4/04/2024
+  Description: Arduino code for RS-485 communication between master and slave devices.
+  Board: Arduino UNO Rev 3
+*/
+
 #include <SoftwareSerial.h>
 #include <stdint.h>
 #include <Wire.h>
 
-#define RS485_BAUD 9600   // Velocidad de comunicación RS-485
+#define RS485_BAUD 9600   // RS-485 communication speed
 #define RS485_PIN_MODE 3  // HIGH: Tx; LOW: Rx
 
 SoftwareSerial RS485Serial(4, 2);  // RX, TX
@@ -41,6 +48,7 @@ void loop() {
   }
 }
 
+// Function to send frame over RS-485
 void send_Frame(String frameComplete) {
   digitalWrite(RS485_PIN_MODE, HIGH);  // Modo Tx
   RS485Serial.println(frameComplete);
@@ -48,6 +56,7 @@ void send_Frame(String frameComplete) {
   digitalWrite(RS485_PIN_MODE, LOW);  // Modo Rx
 }
 
+// Function to handle response from slave
 void respuestaSlave() {
   if (RS485Serial.available()) {
     String frameSlave = RS485Serial.readStringUntil('\n');
@@ -57,6 +66,7 @@ void respuestaSlave() {
       switch (sizeS) {
         case 6:
           {
+            // Handle 6-byte frame
             String ByteState = usefulFrame.substring(0, 2);
             binaryByteState = hexToBinary(ByteState);
             CRC_Calculate = OrderCRC(binaryByteState);
@@ -74,6 +84,7 @@ void respuestaSlave() {
           break;
         case 7:
           {
+            // Handle 7-byte frame
             String ByteState = usefulFrame.substring(0, 2);
             binaryByteState = hexToBinary(ByteState);
             Information = usefulFrame.substring(2, 3);
@@ -95,6 +106,7 @@ void respuestaSlave() {
           break;
         case 8:
           {
+            // Handle 8-byte frame
             String ByteState = usefulFrame.substring(0, 2);
             binaryByteState = hexToBinary(ByteState);
             Information = usefulFrame.substring(2, 4);
@@ -116,6 +128,7 @@ void respuestaSlave() {
           break;
         case 9: 
           {
+            // Handle 9-byte frame
             String ByteState = usefulFrame.substring(0, 2);
             binaryByteState = hexToBinary(ByteState);
             Information = usefulFrame.substring(2, 5);
@@ -137,6 +150,7 @@ void respuestaSlave() {
           break;
         case 10: 
           {
+            // Handle 10-byte frame
             String ByteState = usefulFrame.substring(0, 2);
             binaryByteState = hexToBinary(ByteState);
             Information = usefulFrame.substring(2, 6);
@@ -170,6 +184,7 @@ void respuestaSlave() {
   }
 }
 
+// CRC-16 calculation
 uint16_t crc16(uint8_t *data, uint16_t len) {
   uint16_t crc = 0xFFFF;
   for (uint16_t i = 0; i < len; ++i) {
@@ -186,6 +201,7 @@ uint16_t crc16(uint8_t *data, uint16_t len) {
   return crc;
 }
 
+// Calculate CRC and return hexadecimal string
 String OrderCRC(String bin) {
   char buf[33];
   bin.toCharArray(buf, 33);
@@ -196,9 +212,10 @@ String OrderCRC(String bin) {
   return CRCHex;
 }
 
+// Convert received frame to binary format
 String getDataFrameBinary(String frame) {
-  String dataHex = frame.substring(2, 6);  //<ID><CMD>
-  String dataInt = frame.substring(6);     //<DATE>
+  String dataHex = frame.substring(2, 6);  
+  String dataInt = frame.substring(6);     
   String BinaryDateHex = String(strtoul(dataHex.c_str(), NULL, 16), BIN);
   String BinaryDateInt = String(strtoul(dataInt.c_str(), NULL, 10), BIN);
   String dataFrameBinary;
@@ -211,17 +228,17 @@ String getDataFrameBinary(String frame) {
   }
 }
 
+
+// Display information received from slave
 void showInfo(String info) {
   Serial.println();
   Serial.println("Information received from slave: " + info);
 }
 
+// Compare received and calculated CRC-16
 void compareCRCs(String CRC_Received, String CRC_Calculate) {
-  // Convertir las cadenas hexadecimales a valores decimales
   long receivedValue = strtol(CRC_Received.c_str(), NULL, 16);
   long calculateValue = strtol(CRC_Calculate.c_str(), NULL, 16);
-
-  // Comparar los valores decimales e imprimir el resultado
   if (receivedValue == calculateValue) {
     Checksum = 0;
   } else {
@@ -229,6 +246,7 @@ void compareCRCs(String CRC_Received, String CRC_Calculate) {
   }
 }
 
+// Evaluate individual bits in status byte
 void evaluateBits(String byteEstado) {
   Serial.println();
   Serial.println("Status byte result");
@@ -236,7 +254,7 @@ void evaluateBits(String byteEstado) {
   int longitud = byteEstado.length();
   for (int i = 0; i < longitud; i++) {
     char bit = byteEstado.charAt(i);
-    int valorBit = bit - '0'; // Restar '0' convierte el caracter '1' o '0' a su valor numérico
+    int valorBit = bit - '0'; 
     if (valorBit == 1) {
       Serial.println("Bit " + String(i) + " is 1: " + acciones[i]);
     } else if (valorBit == 0) {
@@ -247,6 +265,7 @@ void evaluateBits(String byteEstado) {
   }
 }
 
+// Convert integer data to binary format
 String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   long aux = strtol(dataInt_1.c_str(), NULL, 10);
   String BinaryDateHex = String(aux, BIN);
@@ -256,6 +275,7 @@ String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   return BinaryComplete;
 }
 
+// Convert hexadecimal and integer data to binary format
 String convertHex_int_toBinary(String dataHex, String dataInt) {
   long aux = strtol(dataHex.c_str(), NULL, 16);
   String BinaryDateHex = String(aux, BIN);
@@ -265,17 +285,18 @@ String convertHex_int_toBinary(String dataHex, String dataInt) {
   return BinaryComplete;
 }
 
+// Convert hexadecimal data to binary format
 String hexToBinary(String hexString) {
   String binaryString = "";
   for (int i = 0; i < hexString.length(); i++) {
     char hexChar = hexString.charAt(i);
     int nibbleValue;
     if (hexChar >= '0' && hexChar <= '9') {
-      nibbleValue = hexChar - '0'; // Convierte dígito decimal a entero
+      nibbleValue = hexChar - '0';
     } else if (hexChar >= 'A' && hexChar <= 'F') {
-      nibbleValue = hexChar - 'A' + 10; // Convierte letra A-F a entero (10-15)
+      nibbleValue = hexChar - 'A' + 10; 
     } else if (hexChar >= 'a' && hexChar <= 'f') {
-      nibbleValue = hexChar - 'a' + 10; // Convierte letra a-f a entero (10-15)
+      nibbleValue = hexChar - 'a' + 10; 
     } 
     for (int j = 3; j >= 0; j--) {
       if (nibbleValue & (1 << j)) {
@@ -288,7 +309,7 @@ String hexToBinary(String hexString) {
   return binaryString;
 }
 
-
+// Convert integer data to binary format
 String IntToBinary(String intString) {
   long aux = strtol(intString.c_str(), NULL, 10);
   String BinaryDateInt = String(aux, BIN);

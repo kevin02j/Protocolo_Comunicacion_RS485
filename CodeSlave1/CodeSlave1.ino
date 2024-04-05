@@ -1,3 +1,10 @@
+/*
+  Authors: Kevin Certuche & Wilson Guerrero 
+  Date: 4/04/2024
+  Description: Program for controlling an Slave with various functions.
+  Board: Arduino NANO
+*/
+
 #include <SoftwareSerial.h>
 #include <Servo.h>
 #include <Arduino.h>
@@ -5,7 +12,7 @@
 #include <EEPROM.h>
 #include <avr/io.h>
 #include <avr/wdt.h>
-
+ 
 #define PIN_IN1 9
 #define PIN_IN2 8
 #define PIN_OUT1 7
@@ -19,7 +26,7 @@
 const float minTension = 1.5;
 const float maxTension = 5.0;
 
-#define RS485_BAUD 9600    // Velocidad de comunicación RS-485
+#define RS485_BAUD 9600    // RS-485 communication speed
 #define RS485_PIN_MODE 11  // HIGH: Tx; LOW: Rx
 #define MY_SLAVE_ID 0
 #define SERVO_LEFT_PIN 13
@@ -27,11 +34,10 @@ const float maxTension = 5.0;
 
 
 SoftwareSerial RS485Serial(12, 10);  // RX, TX
-// SoftwareSerial BTserial(3, 2);  // RX, TX
 Servo servoRight;
 Servo servoLeft;
 
-//Variables del byte de estado
+/// Byte state variables
 int MoveDone;
 int ChecksumError;
 int OverCurrent;
@@ -39,12 +45,11 @@ int powerOn;
 int configError;
 int valorLimit1;
 int valorLimit2;
-//int homeInProgress;
 int StatePin;
 int Info_to_Send;
 String ByteState;
 
-//Variables para comprobar el CRC
+// CRC variables
 String dateHex;
 String dateInt;
 String dateBinary;
@@ -61,15 +66,14 @@ void setup() {
   Serial.begin(9600);
   pinMode(RS485_PIN_MODE, OUTPUT);
   RS485Serial.begin(RS485_BAUD);
-  // BTserial.begin(115200);
   digitalWrite(RS485_PIN_MODE, LOW);  // Rx
-
   int PruebaID = EEPROM.read(MY_SLAVE_ID);
   Serial.println("my Id: " + String(PruebaID));
 }
 
 void loop() {
   if (RS485Serial.available()) {
+    // Initialize variables
     MoveDone = 0;
     ChecksumError = 0;
     OverCurrent = 0;
@@ -80,16 +84,19 @@ void loop() {
     StatePin = 0;
     Info_to_Send = 0;
 
+    // Read received frame
     String receivedFrame = RS485Serial.readStringUntil('\n');
 
     if (receivedFrame.startsWith("AA")) {
+      // Extract slave ID from frame
       String ID_Slave = receivedFrame.substring(2, 4);
       int idInt = hex_to_decimal(ID_Slave);
       uint8_t IdEEprom = EEPROM.get(MY_SLAVE_ID, IdEEprom);
+      // Check if the frame is intended for this slave
       if (idInt == IdEEprom) {
         String dataUseful = receivedFrame.substring(2);
         checksum(dataUseful);
-        //Comprobar si hubo errores en la transmision
+        // Check for transmission errors
         if (ChecksumError == 0) {
           String cmd = receivedFrame.substring(4, 6);
           ejecutarAccion(cmd);
@@ -115,6 +122,7 @@ void loop() {
   }
 }
 
+// Execute action based on command
 void ejecutarAccion(String cmd) {
   long hexValue = strtol(cmd.c_str(), NULL, 16);
   int cmdInt = static_cast<int>(hexValue);
@@ -124,7 +132,6 @@ void ejecutarAccion(String cmd) {
   switch (cmdInt) {
     case 1:
       {
-        //Asignar Id al esclavo
         Serial.println("New Id: " + String(info));
         if (inf >= 1 && inf <= 247) {
           EEPROM.write(0, inf);  // 0-255
@@ -159,7 +166,6 @@ void ejecutarAccion(String cmd) {
     case 4:
       {
         if (configIO_FLag == 1) {
-          //Identificar cual pin desea conocer el estado
           switch (inf) {
             case 1:
               {
@@ -249,7 +255,6 @@ void ejecutarAccion(String cmd) {
       break;
     case 7:
       {
-        // Config PWM
         pinMode(PIN_PWM1, OUTPUT);
         pinMode(PIN_PWM2, OUTPUT);
         analogWrite(PIN_PWM1, 1);
@@ -354,10 +359,9 @@ void ejecutarAccion(String cmd) {
 //   while (1) {}
 // }
 
+// Calculate checksum
 void checksum(String checkFrame) {
-  //Serial.println(checkFrame);
   uint8_t sizeF = checkFrame.length();
-  //Serial.println(sizeF);
   switch (sizeF) {
     case 9:
       {
@@ -422,23 +426,6 @@ void checksum(String checkFrame) {
         compareCRCs(CRC_Received, CRC_Calculate);
       }
       break;
-    // case 13:
-    //   {
-    //     dateHex = checkFrame.substring(0, 4);
-    //     dateInt = checkFrame.substring(4, 8);
-    //     dateBinary = convertHex_int_toBinary(dateHex, dateInt);
-    //     String CRC_Received = checkFrame.substring(8);
-    //     String CRC_Calculate = OrderCRC(dateBinary);
-    //     info = dateInt;
-    //     Serial.println("CRC received: " + CRC_Received);
-    //     Serial.println("CRC calculate: " + CRC_Calculate);
-    //     if (CRC_Calculate = CRC_Received) {
-    //       ChecksumError = 0;
-    //     } else {
-    //       ChecksumError = 1;
-    //     }
-    //   }
-    //   break;
     default:
       {
         Serial.println("The frame size is out of range. Error!!");
@@ -447,6 +434,7 @@ void checksum(String checkFrame) {
   }
 }
 
+// Send response
 void enviarRtta(String CRC) {
   String StateByte_Send = convertBinary_toHex(ByteState);
   String frame;
@@ -461,16 +449,6 @@ void enviarRtta(String CRC) {
   RS485Serial.flush();
   digitalWrite(RS485_PIN_MODE, LOW);  // modo rx
 }
-
-// int lecturaSensor() {
-//   int cm = sensor.ping_cm();  // Medir la distancia en centímetros
-//   if (cm == 0) {
-//     //Serial.println("¡No se detectó ningún objeto!");
-//     return 250;
-//   } else {
-//     return cm;
-//   }
-// }
 
 uint16_t crc16(uint8_t *data, uint16_t len) {
   uint16_t crc = 0xFFFF;
@@ -498,6 +476,7 @@ String OrderCRC(String bin) {
   return CRCHex;
 }
 
+// Check power supply voltage
 void verificarTension() {
   int lectura = analogRead(PIN_TENSION);
   float tension = lectura * (5.0 / 1023.0);
@@ -508,12 +487,10 @@ void verificarTension() {
   }
 }
 
+// Compare received CRC with calculated CRC
 void compareCRCs(String CRC_Received, String CRC_Calculate) {
-  // Convertir las cadenas hexadecimales a valores decimales
   long receivedValue = strtol(CRC_Received.c_str(), NULL, 16);
   long calculateValue = strtol(CRC_Calculate.c_str(), NULL, 16);
-
-  // Comparar los valores decimales e imprimir el resultado
   if (receivedValue == calculateValue) {
     ChecksumError = 0;
   } else {
@@ -521,12 +498,14 @@ void compareCRCs(String CRC_Received, String CRC_Calculate) {
   }
 }
 
+// Convert hexadecimal string to binary string
 String hexToBinary(String hexString) {
   unsigned int hexValue = strtol(hexString.c_str(), NULL, 16);
   String binaryString = String(hexValue, BIN);
   return binaryString;
 }
 
+// Convert hexadecimal and integer data to binary
 String convertHex_int_toBinary(String dataHex, String dataInt) {
   long aux = strtol(dataHex.c_str(), NULL, 16);
   String BinaryDateHex = String(aux, BIN);
@@ -536,6 +515,7 @@ String convertHex_int_toBinary(String dataHex, String dataInt) {
   return BinaryComplete;
 }
 
+// Convert integer data to binary
 String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   long aux = strtol(dataInt_1.c_str(), NULL, 10);
   String BinaryDateHex = String(aux, BIN);
@@ -545,6 +525,7 @@ String convertInt_toBinary(String dataInt_1, String dataInt_2) {
   return BinaryComplete;
 }
 
+// Convert binary string to hexadecimal string
 String convertBinary_toHex(String binario) {
   unsigned long decimal = strtol(binario.c_str(), NULL, 2);
   char hex[9];
@@ -553,6 +534,7 @@ String convertBinary_toHex(String binario) {
   return resultadoHex;
 }
 
+// Convert hexadecimal string to decimal
 int hex_to_decimal(String hex_string) {
   unsigned int result = 0;
   for (int i = 0; i < hex_string.length(); i++) {

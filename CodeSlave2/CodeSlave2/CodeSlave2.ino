@@ -1,3 +1,9 @@
+/*
+  Authors: Kevin Certuche & Wilson Guerrero 
+  Date: 4/04/2024
+  Description: Program for controlling an Slave with various functions.
+  Board: ESP32 DEV KIT V1
+*/
 #include <HardwareSerial.h>
 #include <ESP32Servo.h>
 #include <EEPROM.h>
@@ -23,7 +29,7 @@ const int PIN_TENSION = 13;
 const float minTension = 0.0;
 const float maxTension = 5.0;
 
-#define RS485_BAUD 9600   // Velocidad de comunicación RS-485
+#define RS485_BAUD 9600   // RS-485 communication speed
 #define RS485_PIN_MODE 4  // HIGH: Tx; LOW: Rx
 int MY_SLAVE_ID = 0;
 #define SERVO_BASE_PIN 12
@@ -32,7 +38,7 @@ int MY_SLAVE_ID = 0;
 Servo servoBase;
 Servo servoPinza;
 
-//Variables del byte de estado
+// Byte state variables
 int MoveDone;
 int ChecksumError;
 int OverCurrent;
@@ -40,12 +46,11 @@ int powerOn;
 int configError;
 int valorLimit1;
 int valorLimit2;
-//int homeInProgress;
 int StatePin;
 int Info_to_Send;
 String ByteState;
 
-//Variables para comprobar el CRC
+// CRC variables
 String dateHex;
 String dateInt;
 String dateBinary;
@@ -92,7 +97,7 @@ void loop() {
       if (idInt == IdEEprom) {
         String dataUseful = receivedFrame.substring(2);
         checksum(dataUseful);
-        //Comprobar si hubo errores en la transmision
+        // Check for transmission errors
         if (ChecksumError == 0) {
           String cmd = receivedFrame.substring(4, 6);
           ejecutarAccion(cmd);
@@ -121,13 +126,10 @@ void loop() {
 void ejecutarAccion(String cmd) {
   long hexValue = strtol(cmd.c_str(), NULL, 16);
   int cmdInt = static_cast<int>(hexValue);
-  // int cmdInt = cmd.toInt();
-  //Serial.println(cmdInt);
   int inf = info.toInt();
   switch (cmdInt) {
     case 1:
       {
-        //Asignar Id al esclavo
         Serial.println("New Id: " + String(info));
         Serial.println(inf);
         if (inf >= 0 && inf <= 247) {
@@ -163,7 +165,6 @@ void ejecutarAccion(String cmd) {
     case 4:
       {
         if (configIO_FLag == 1) {
-          //Identificar cual pin desea conocer el estado
           switch (inf) {
             case 1:
               {
@@ -236,10 +237,10 @@ void ejecutarAccion(String cmd) {
         switch (inf) {
           case 1:
             {
-              analogSetPinAttenuation(ADC_1, ADC_11db);  //Config ADC_1 para entrada analogica
-              int lecturaADC = analogRead(ADC_1);
+              analogSetPinAttenuation(POT_ADC_1, ADC_11db); 
+              int lecturaADC = analogRead(POT_ADC_1);
               int valorMapeado = map(lecturaADC, 0, 4095, 1, 255);
-              Serial.println(valorMapeado);
+              Serial.println(lecturaADC);
               Info_to_Send = valorMapeado;
               MoveDone = 1;
             }
@@ -255,7 +256,6 @@ void ejecutarAccion(String cmd) {
       break;
     case 7:
       {
-        // Config PWM
         pinMode(PIN_PWM1, OUTPUT);
         pinMode(PIN_PWM2, OUTPUT);
         analogWrite(PIN_PWM1, 1);
@@ -345,7 +345,6 @@ void ejecutarAccion(String cmd) {
       break;
     case 11:
       {
-        //Read Sensor Temperature
         int temperatura = dht.readTemperature();
         Serial.println("TEMP:" + String(temperatura));
         Info_to_Send = temperatura;
@@ -446,11 +445,9 @@ void checksum(String checkFrame) {
 }
 
 void compareCRCs(String CRC_Received, String CRC_Calculate) {
-  // Convertir las cadenas hexadecimales a valores decimales
   long receivedValue = strtol(CRC_Received.c_str(), NULL, 16);
   long calculateValue = strtol(CRC_Calculate.c_str(), NULL, 16);
 
-  // Comparar los valores decimales e imprimir el resultado
   if (receivedValue == calculateValue) {
     ChecksumError = 0;
   } else {
